@@ -1,201 +1,129 @@
 $(function () {
-    // *********************************************************************
-    // Feel free to modify/remove the JS objects below.
-    // *********************************************************************
+    let user = "UTRGV Vaqueros";
+    $("#username").append(user);
 
-    let revenueAmt = "$35,800";
-    let customerNum = "1,284";
-    let ordersAmt = "342";
-    let issuesAmt = "12";
-    let username = "UTRGV Vaqueros";
-    let notifAmt = 3;
+    function toDollars(num) {
+        return "$" + Number(num).toLocaleString("en-US", { minimumFractionDigits: 2 });
+    }
 
-    const customers = [
-        {
-            "name": "Alice Johnson",
-            "email": "alice@example.com",
-            "status": "Active",
-            "joined": "09/10/2026"
-        },
-        {
-            "name": "Robert Smith",
-            "email": "robert@example.com",
-            "status": "Pending",
-            "joined": "09/12/2026"
-        },
-        {
-            "name": "Maria Garcia",
-            "email": "maria@example.com",
-            "status": "Active",
-            "joined": "09/15/2026"
+    function addCommas(num) {
+        return Number(num).toLocaleString("en-US");
+    }
+
+    function formatJoined(d) {
+        let pieces = d.split("-");
+        return pieces[1] + "/" + pieces[2] + "/" + pieces[0];
+    }
+
+    // getJSON is async so everything that uses the data has to go inside the callback
+    $.getJSON("/api/dashboard", function (info) {
+
+        // .revenue-amt is a class so this fills both the card and the overview tab
+        $(".revenue-amt").append(toDollars(info.revenue));
+        $("#customer-num").append(addCommas(info.customerCount));
+        $("#orders-amt").append(addCommas(info.orderCount));
+        $("#issues-amt").append(addCommas(info.issueCount));
+        $("#notification-num").append(info.notifCount);
+
+        for (let i = 0; i < info.sales.length; i++) {
+            let sale = info.sales[i];
+            let row = "<tr><td>" + sale.name + "</td><td>" + sale.quantity + "</td><td>" + toDollars(sale.saleamount) + "</td></tr>";
+            $("#salesTableBody").append(row);
         }
-    ];
 
-    const sales = [
-        {
-            "product": "Product A",
-            "quantity": "124",
-            "revenue": "$12,400"
-        },
-        {
-            "product": "Product B",
-            "quantity": "98",
-            "revenue": "$9,800"
-        },
-        {
-            "product": "Product C",
-            "quantity": "75",
-            "revenue": "$7,500"
-        },
-    ];
-
-    const activities = [
-        {
-            "message" : "New customer registered"
-        },
-        {
-            "message" : "Order #10482 completed"
-        },
-        {
-            "message" : "Payment received"
-        },
-        {
-            "message" : "Support ticket created"
+        for (let i = 0; i < info.issues.length; i++) {
+            $("#system-status-list").append("<li>" + info.issues[i].description + "</li>");
         }
-    ];
 
-    const messages = [
-        {
-            "messsage" : "All systems operational"
-        },
-        {
-            "messsage" : "All settings loaded for this system"
+        for (let i = 0; i < info.notifications.length; i++) {
+            $("#notifications-list").append("<li>" + info.notifications[i].description + "</li>");
         }
-    ];
 
-    const notifications = [
-        {
-            "messsage": "A new shipment is expected to arrive on Sep 30, 2026"
-        },
-        {
-            "messsage": "There are 12 outstanding issues with last week's orders"
-        },
-        {
-            "messsage": "Three new customers joined our platform in the last month"
-        },
-    ];
+        for (let i = 0; i < info.tasks.length; i++) {
+            $("#tasks-list").append("<li>" + info.tasks[i].description + "</li>");
+        }
 
-    const tasks = [
-       {
-            "messsage": "Review orders"
-        },
-        {
-            "messsage": "Contact customer"
-        },
-        {
-            "messsage": "Generate report"
-        },
-    ]
+        // it needs a refresh to resize
+        $("#accordion").accordion("refresh");
+    });
 
-    // There are 13 requirements to implement. 
-    const userNameObj = $("#username");
-    userNameObj.append(`${username}`);
+    function getCustomers(pageNum) {
+        $.getJSON("/api/customers", { page: pageNum }, function (result) {
+            $("#customerTableBody").empty();
 
-    const cardRevenue = $(".revenue-amt");   // this must select the class .revenue-amt, which will affect two elements. So count this 2 times.
-    cardRevenue.append(`${revenueAmt}`);
+            for (let i = 0; i < result.customers.length; i++) {
+                let cust = result.customers[i];
 
-    const cardCustomers = $("#customer-num");
-    cardCustomers.append(`${customerNum}`);
+                let badge = "status-pending";
+                if (cust.status.toLowerCase() == "active") {
+                    badge = "status-active";
+                }
 
-    const cardOrders = $("#orders-amt");
-    cardOrders.append(`${ordersAmt}`);
+                let row = "<tr>" +
+                    "<td>" + cust.name + "</td>" +
+                    "<td>" + cust.email + "</td>" +
+                    "<td><span class='status " + badge + "'>" + cust.status + "</span></td>" +
+                    "<td>" + formatJoined(cust.datejoined) + "</td>" +
+                    "</tr>";
 
-    const cardIssues = $("#issues-amt");
-    cardIssues.append(`${issuesAmt}`);
-
-    const notificationNumber = $("#notification-num");
-    notificationNumber.append(`${notifAmt}`);
-
-    const tableBody = $("#customerTableBody");
-
-    customers.forEach(customer => {
-        const row = $("<tr>");
-
-        var statusClass;
-            if (customer.status.toLowerCase() === "active"){
-                statusClass = "status-active";
-            } else {
-                statusClass = "status-pending";
+                $("#customerTableBody").append(row);
             }
-        row.html(`
-            <td>${customer.name}</td>
-            <td>${customer.email}</td>
-            <td>
-                <span class="status ${statusClass}">
-                    ${customer.status}
-                </span>
-            </td>
-            <td>${customer.joined}</td>
-        `);
 
-        tableBody.append(row);
+            showPages(result.page, result.totalPages);
+        });
+    }
+
+    function showPages(curPage, maxPage) {
+        let nav = $("#pagination");
+        nav.empty();
+
+        if (curPage == 1) {
+            nav.append("<a href='#' class='disabled'>Prev</a>");
+        } else {
+            nav.append("<a href='#' data-page='" + (curPage - 1) + "'>Prev</a>");
+        }
+
+        // 129 pages is too many links, so only show 5 around the current page
+        let first = curPage - 2;
+        if (first < 1) first = 1;
+        let lastShown = first + 4;
+        if (lastShown > maxPage) {
+            lastShown = maxPage;
+            first = lastShown - 4;
+            if (first < 1) first = 1;
+        }
+
+        for (let p = first; p <= lastShown; p++) {
+            if (p == curPage) {
+                nav.append("<a href='#' class='active' data-page='" + p + "'>" + p + "</a>");
+            } else {
+                nav.append("<a href='#' data-page='" + p + "'>" + p + "</a>");
+            }
+        }
+
+        if (curPage == maxPage) {
+            nav.append("<a href='#' class='disabled'>Next</a>");
+        } else {
+            nav.append("<a href='#' data-page='" + (curPage + 1) + "'>Next</a>");
+        }
+
+        nav.append("<span> Page " + curPage + " of " + maxPage + "</span>");
+    }
+
+    // links get deleted and remade every time
+    $("#pagination").on("click", "a", function (e) {
+        e.preventDefault();
+        let goTo = $(this).data("page");
+        if (goTo) {
+            getCustomers(goTo);
+        }
     });
 
-   
-    const salesTableBody = $("#salesTableBody");
+    getCustomers(1);
 
-    sales.forEach(sale => {
-        const row = $("<tr>");
-
-        row.html(`
-            <td>${sale.product}</td>
-            <td>${sale.quantity}</td>
-            <td>${sale.revenue}</td>
-        `);
-
-        salesTableBody.append(row);
-    });
-
-    const activityList = $("#activity-list");
-
-    activities.forEach(activity => {
-        const li = $("<li>");
-        li.html(`${activity.message}`);
-        activityList.append(li);
-    });
-
- 
-    const systemStatusList = $("#system-status-list");
-
-    messages.forEach(msg => {
-        const li = $("<li>");
-        li.html(`${msg.messsage}`);
-        systemStatusList.append(li);
-    });
-
-
-    const notificationsList = $("#notifications-list");
-
-    notifications.forEach(notif => {
-        const li = $("<li>");
-        li.html(`${notif.messsage}`);
-        notificationsList.append(li);
-    });
-
-
-    const tasksList = $("#tasks-list");
-
-    tasks.forEach(task => {
-        const li = $("<li>");
-        li.html(`${task.messsage}`);
-        tasksList.append(li);
-    });
-
-
-    // All six jQuery UI functions
 
     $("button").button();
-       
+
     $("#dashboardTabs").tabs();
 
     $("#customerDate").datepicker();
@@ -214,12 +142,9 @@ $(function () {
                 var name = $("#customerName").val();
                 var email = $("#customerEmail").val();
                 if (!name || !email) {
-                    alert(
-                        "Please enter a name and email."
-                    );
+                    alert("Please enter a name and email.");
                     return;
                 }
-
                 alert("Customer created: " + name);
                 $(this).dialog("close");
             },
@@ -227,20 +152,10 @@ $(function () {
                 $(this).dialog("close");
             }
         }
-
     });
 
-
-    $("#newCustomerButton").on(
-        "click",
-        function () {
-            $("#customerDialog").dialog("open");
-        }
-    );
-
-
-
-       
-
-
+    $("#newCustomerButton").on("click", function () {
+        $("#customerDialog").dialog("open");
     });
+
+});
